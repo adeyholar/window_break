@@ -6,5 +6,6 @@
   "sound_enabled": true,
   "minimize_to_tray": true,
   "auto_start_break": true,
-  "auto_start_work": true
+  "auto_start_work": true,
+  "auto_start_on_launch": true
 }
