@@ -1,4 +1,4 @@
-#!\window_break\standalone-break-reminder.py
+#!/usr/bin/env python3
 """
 Standalone Break Reminder Application
 A desktop application that runs in the system tray and reminds you to take breaks.
@@ -221,7 +221,7 @@ class BreakReminderApp:
                                             textvariable=self.sessions_var)
         self.sessions_spinbox.grid(row=3, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.EW)
         
-        # Idle threshold
+        #Idle threshold
         ttk.Label(settings_frame, text="Idle threshold (sec):").grid(row=4, column=0, sticky=tk.W, pady=(5, 0))
         self.idle_spinbox = ttk.Spinbox(settings_frame, from_=60, to=900, width=10,
                                         textvariable=self.idle_var)
@@ -396,9 +396,9 @@ class BreakReminderApp:
     def run_timer(self):
         """Timer loop that runs in a separate thread"""
         while self.is_running and self.time_left > 0:
-            # Check for idle if enabled
-            if self.pause_on_idle and self.get_idle_time() > self.idle_threshold:
-                time.sleep(1)  # Pause decrement while idle
+            # Check for idle if enabled and not in break
+            if self.pause_on_idle and not self.is_break and self.get_idle_time() > self.idle_threshold:
+                time.sleep(1)  # Pause decrement while idle during work
                 continue
             
             time.sleep(1)
