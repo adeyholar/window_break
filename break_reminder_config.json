@@ -1,11 +1,14 @@
 {
-  "work_minutes": 25,
+  "work_minutes": 30,
   "break_minutes": 5,
-  "long_break_minutes": 15,
+  "long_break_minutes": 10,
   "sessions_until_long_break": 4,
   "sound_enabled": true,
   "minimize_to_tray": true,
   "auto_start_break": true,
   "auto_start_work": true,
-  "auto_start_on_launch": true
+  "auto_start_on_launch": true,
+  "pause_on_idle": true,
+  "idle_threshold": 100,
+  "custom_sound_path": "C:/Users/adeol/Downloads/GENESIS.mp3"
 }

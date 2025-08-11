@@ -1,17 +1,18 @@
-#!/usr/bin/env python3
+#!\window_break\standalone-break-reminder.py
 """
 Standalone Break Reminder Application
 A desktop application that runs in the system tray and reminds you to take breaks.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import threading
 import time
 import json
 import os
 from datetime import datetime, timedelta
 import sys
+import ctypes  # For idle detection on Windows
 
 # For system tray functionality
 try:
@@ -32,12 +33,21 @@ except ImportError:
     print("Note: Install 'plyer' for better notifications")
     print("Run: pip install plyer")
 
+# For custom sound support
+try:
+    from playsound import playsound
+    PLAYSOUND_AVAILABLE = True
+except ImportError:
+    PLAYSOUND_AVAILABLE = False
+    print("Note: Install 'playsound' for custom sound support")
+    print("Run: pip install playsound")
+
 class BreakReminderApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Break Reminder")
         self.root.geometry("450x600")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)  # Enable resizing
         
         # Configuration
         self.config_file = "break_reminder_config.json"
@@ -78,7 +88,10 @@ class BreakReminderApp:
             "minimize_to_tray": True,
             "auto_start_break": True,
             "auto_start_work": False,
-            "auto_start_on_launch": True  # New option
+            "auto_start_on_launch": True,
+            "pause_on_idle": True,
+            "idle_threshold": 300,
+            "custom_sound_path": ""  # Path to custom sound file
         }
         
         if os.path.exists(self.config_file):
@@ -107,7 +120,10 @@ class BreakReminderApp:
             "minimize_to_tray": self.minimize_to_tray,
             "auto_start_break": self.auto_start_break,
             "auto_start_work": self.auto_start_work,
-            "auto_start_on_launch": self.auto_start_on_launch  # New option
+            "auto_start_on_launch": self.auto_start_on_launch,
+            "pause_on_idle": self.pause_on_idle,
+            "idle_threshold": self.idle_threshold,
+            "custom_sound_path": self.custom_sound_path
         }
         
         with open(self.config_file, 'w') as f:
@@ -115,80 +131,107 @@ class BreakReminderApp:
     
     def setup_ui(self):
         """Setup the main user interface"""
-        # Style
+        # Style - Ancient sage theme: parchment background, earthy tones, serif fonts
         style = ttk.Style()
         style.theme_use('clam')
+        style.configure("TFrame", background="#f5f5dc")  # Parchment beige
+        style.configure("TLabel", background="#f5f5dc", foreground="#8B4513", font=('Times New Roman', 12))  # Saddle brown text
+        style.configure("TButton", background="#D2B48C", foreground="#4B0082", font=('Times New Roman', 12))  # Tan buttons, indigo text
+        style.configure("TCheckbutton", background="#f5f5dc", foreground="#8B4513", font=('Times New Roman', 12))
+        style.configure("TSpinbox", background="#f5f5dc", foreground="#8B4513", font=('Times New Roman', 12))
+        style.configure("TLabelFrame", background="#f5f5dc", foreground="#8B4513", font=('Times New Roman', 14, 'bold'))
         
         # Main frame
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.root.columnconfigure(0, weight=1)  # Allow stretching
+        self.root.rowconfigure(0, weight=1)  # Allow stretching
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
         
         # Title
-        title_label = ttk.Label(main_frame, text="⏰ Break Reminder", 
-                                font=('Arial', 20, 'bold'))
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        title_label = ttk.Label(main_frame, text="📜 Sage's Break Scroll", 
+                                font=('Times New Roman', 20, 'bold'))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky=tk.EW)
         
         # Status
-        self.status_label = ttk.Label(main_frame, text="Ready to start working",
-                                      font=('Arial', 12))
-        self.status_label.grid(row=1, column=0, columnspan=2, pady=(0, 10))
+        self.status_label = ttk.Label(main_frame, text="Ready to commence wisdom",
+                                      font=('Times New Roman', 12))
+        self.status_label.grid(row=1, column=0, columnspan=2, pady=(0, 10), sticky=tk.EW)
         
         # Timer display
         self.timer_label = ttk.Label(main_frame, text="25:00",
-                                     font=('Arial', 48, 'bold'))
-        self.timer_label.grid(row=2, column=0, columnspan=2, pady=(0, 20))
+                                     font=('Times New Roman', 48, 'bold'))
+        self.timer_label.grid(row=2, column=0, columnspan=2, pady=(0, 20), sticky=tk.EW)
         
         # Session counter
-        self.session_label = ttk.Label(main_frame, text="Session: 0 / 4",
-                                       font=('Arial', 10))
-        self.session_label.grid(row=3, column=0, columnspan=2, pady=(0, 20))
+        self.session_label = ttk.Label(main_frame, text="Scroll: 0 / 4",
+                                       font=('Times New Roman', 10))
+        self.session_label.grid(row=3, column=0, columnspan=2, pady=(0, 20), sticky=tk.EW)
         
         # Control buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=(0, 20))
+        button_frame.grid(row=4, column=0, columnspan=2, pady=(0, 20), sticky=tk.EW)
+        button_frame.columnconfigure(0, weight=1)
+        button_frame.columnconfigure(1, weight=1)
         
-        self.start_button = ttk.Button(button_frame, text="Start Work",
+        self.start_button = ttk.Button(button_frame, text="Commence Scroll",
                                        command=self.toggle_timer, width=12)
-        self.start_button.grid(row=0, column=0, padx=5)
+        self.start_button.grid(row=0, column=0, padx=5, sticky=tk.EW)
         
-        self.reset_button = ttk.Button(button_frame, text="Reset",
+        self.reset_button = ttk.Button(button_frame, text="Reset Scroll",
                                        command=self.reset_timer, width=12)
-        self.reset_button.grid(row=0, column=1, padx=5)
+        self.reset_button.grid(row=0, column=1, padx=5, sticky=tk.EW)
         
         # Settings frame
-        settings_frame = ttk.LabelFrame(main_frame, text="Settings", padding="10")
+        settings_frame = ttk.LabelFrame(main_frame, text="Sage's Settings", padding="10")
         settings_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        settings_frame.columnconfigure(0, weight=1)
+        settings_frame.columnconfigure(1, weight=1)
         
         # Create StringVar variables for spinboxes
         self.work_var = tk.StringVar(value=str(self.work_minutes))
         self.break_var = tk.StringVar(value=str(self.break_minutes))
         self.long_break_var = tk.StringVar(value=str(self.long_break_minutes))
         self.sessions_var = tk.StringVar(value=str(self.sessions_until_long_break))
-        self.auto_launch_var = tk.BooleanVar(value=self.auto_start_on_launch)  # New variable
+        self.idle_var = tk.StringVar(value=str(self.idle_threshold))
+        self.sound_path_var = tk.StringVar(value=self.custom_sound_path if self.custom_sound_path else "No sound selected")
         
         # Work time
-        ttk.Label(settings_frame, text="Work time (min):").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(settings_frame, text="Work Scroll (min):").grid(row=0, column=0, sticky=tk.W)
         self.work_spinbox = ttk.Spinbox(settings_frame, from_=1, to=60, width=10,
                                         textvariable=self.work_var)
-        self.work_spinbox.grid(row=0, column=1, padx=(10, 0))
+        self.work_spinbox.grid(row=0, column=1, padx=(10, 0), sticky=tk.EW)
         
         # Break time
-        ttk.Label(settings_frame, text="Break time (min):").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
+        ttk.Label(settings_frame, text="Break Scroll (min):").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
         self.break_spinbox = ttk.Spinbox(settings_frame, from_=1, to=30, width=10,
                                          textvariable=self.break_var)
-        self.break_spinbox.grid(row=1, column=1, padx=(10, 0), pady=(5, 0))
+        self.break_spinbox.grid(row=1, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.EW)
         
         # Long break time
-        ttk.Label(settings_frame, text="Long break (min):").grid(row=2, column=0, sticky=tk.W, pady=(5, 0))
+        ttk.Label(settings_frame, text="Long Break Scroll (min):").grid(row=2, column=0, sticky=tk.W, pady=(5, 0))
         self.long_break_spinbox = ttk.Spinbox(settings_frame, from_=5, to=60, width=10,
                                               textvariable=self.long_break_var)
-        self.long_break_spinbox.grid(row=2, column=1, padx=(10, 0), pady=(5, 0))
+        self.long_break_spinbox.grid(row=2, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.EW)
         
         # Sessions until long break
-        ttk.Label(settings_frame, text="Sessions until long break:").grid(row=3, column=0, sticky=tk.W, pady=(5, 0))
+        ttk.Label(settings_frame, text="Scrolls until long break:").grid(row=3, column=0, sticky=tk.W, pady=(5, 0))
         self.sessions_spinbox = ttk.Spinbox(settings_frame, from_=2, to=10, width=10,
                                             textvariable=self.sessions_var)
-        self.sessions_spinbox.grid(row=3, column=1, padx=(10, 0), pady=(5, 0))
+        self.sessions_spinbox.grid(row=3, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.EW)
+        
+        # Idle threshold
+        ttk.Label(settings_frame, text="Idle threshold (sec):").grid(row=4, column=0, sticky=tk.W, pady=(5, 0))
+        self.idle_spinbox = ttk.Spinbox(settings_frame, from_=60, to=900, width=10,
+                                        textvariable=self.idle_var)
+        self.idle_spinbox.grid(row=4, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.EW)
+        
+        # Custom sound selection
+        ttk.Label(settings_frame, text="Custom Sound:").grid(row=5, column=0, sticky=tk.W, pady=(5, 0))
+        self.sound_path_label = ttk.Label(settings_frame, textvariable=self.sound_path_var, wraplength=200)
+        self.sound_path_label.grid(row=5, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.W)
+        ttk.Button(settings_frame, text="Choose Sound", command=self.choose_sound).grid(row=6, column=1, padx=(10, 0), pady=(5, 0), sticky=tk.EW)
         
         # Checkboxes frame
         checkbox_frame = ttk.Frame(main_frame)
@@ -214,15 +257,31 @@ class BreakReminderApp:
         ttk.Checkbutton(checkbox_frame, text="Auto-start timer on launch",
                         variable=self.auto_launch_var).grid(row=3, column=0, sticky=tk.W)
         
+        # Pause on idle checkbox
+        self.pause_idle_var = tk.BooleanVar(value=self.pause_on_idle)
+        ttk.Checkbutton(checkbox_frame, text="Pause timer when idle",
+                        variable=self.pause_idle_var).grid(row=4, column=0, sticky=tk.W)
+        
         # Minimize to tray checkbox
         if TRAY_AVAILABLE:
             self.tray_var = tk.BooleanVar(value=self.minimize_to_tray)
             ttk.Checkbutton(checkbox_frame, text="Minimize to system tray",
-                           variable=self.tray_var).grid(row=4, column=0, sticky=tk.W)
+                           variable=self.tray_var).grid(row=5, column=0, sticky=tk.W)
         
         # Save settings button
         ttk.Button(main_frame, text="Save Settings",
-                  command=self.save_settings, width=20).grid(row=7, column=0, columnspan=2, pady=(10, 0))
+                  command=self.save_settings, width=20).grid(row=7, column=0, columnspan=2, pady=(10, 0), sticky=tk.EW)
+    
+    def choose_sound(self):
+        """Open file dialog to choose a sound file"""
+        file_path = filedialog.askopenfilename(
+            filetypes=[("Audio Files", "*.wav *.mp3"), ("All Files", "*.*")],
+            title="Select Sound File"
+        )
+        if file_path:
+            self.custom_sound_path = file_path
+            self.sound_path_var.set(os.path.basename(file_path) if file_path else "No sound selected")
+            self.save_config()  # Save immediately after selection
     
     def setup_tray(self):
         """Setup system tray icon"""
@@ -268,7 +327,7 @@ class BreakReminderApp:
         self.timer_label.config(text=time_str)
         
         # Update session counter
-        self.session_label.config(text=f"Session: {self.session_count} / {self.sessions_until_long_break}")
+        self.session_label.config(text=f"Scroll: {self.session_count} / {self.sessions_until_long_break}")
     
     def toggle_timer(self):
         """Start or stop the timer"""
@@ -320,9 +379,28 @@ class BreakReminderApp:
             self.break_window.destroy()
             self.break_window = None
     
+    def get_idle_time(self):
+        """Get the idle time in seconds (Windows only)"""
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [
+                ('cbSize', ctypes.c_uint),
+                ('dwTime', ctypes.c_uint),
+            ]
+        
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(lii)
+        ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii))
+        millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+        return millis / 1000.0
+    
     def run_timer(self):
         """Timer loop that runs in a separate thread"""
         while self.is_running and self.time_left > 0:
+            # Check for idle if enabled
+            if self.pause_on_idle and self.get_idle_time() > self.idle_threshold:
+                time.sleep(1)  # Pause decrement while idle
+                continue
+            
             time.sleep(1)
             self.time_left -= 1
             
@@ -396,7 +474,7 @@ class BreakReminderApp:
         self.break_window = tk.Toplevel(self.root)
         self.break_window.title("Break Time!")
         self.break_window.geometry("600x400")
-        self.break_window.configure(bg='#2E7D32')
+        self.break_window.configure(bg='#D2B48C')  # Ancient tan background
         
         # Make it stay on top
         self.break_window.attributes('-topmost', True)
@@ -412,24 +490,24 @@ class BreakReminderApp:
         # Break content
         title_text = "☕ Long Break Time!" if break_type == "long" else "☕ Break Time!"
         title_label = tk.Label(self.break_window, text=title_text,
-                               font=('Arial', 32, 'bold'), bg='#2E7D32', fg='white')
+                               font=('Times New Roman', 32, 'bold'), bg='#D2B48C', fg='#4B0082')
         title_label.pack(pady=(50, 20))
         
         message_label = tk.Label(self.break_window, 
                                 text="Time to rest your eyes and stretch!",
-                                font=('Arial', 16), bg='#2E7D32', fg='white')
+                                font=('Times New Roman', 16), bg='#D2B48C', fg='#4B0082')
         message_label.pack(pady=(0, 30))
         
         self.break_timer_label = tk.Label(self.break_window, 
                                          text=f"{break_minutes:02d}:00",
-                                         font=('Arial', 48, 'bold'), 
-                                         bg='#2E7D32', fg='white')
+                                         font=('Times New Roman', 48, 'bold'), 
+                                         bg='#D2B48C', fg='#4B0082')
         self.break_timer_label.pack(pady=(0, 40))
         
         # Skip button
         skip_button = tk.Button(self.break_window, text="Skip Break",
                                command=self.skip_break,
-                               font=('Arial', 12), padx=20, pady=10)
+                               font=('Times New Roman', 12), padx=20, pady=10, bg='#8B4513', fg='#f5f5dc')
         skip_button.pack()
         
         # Update break timer
@@ -449,18 +527,16 @@ class BreakReminderApp:
             self.break_window = None
     
     def skip_break(self):
-        """Skip the current break"""
+        """Skip the current break and auto-start the next work session"""
         self.close_break_window()
-        self.is_running = False
         self.is_break = False
         try:
             self.work_minutes = int(self.work_var.get()) if self.work_var.get() else self.work_minutes
         except (ValueError, AttributeError):
             pass  # Keep existing value
         self.time_left = self.work_minutes * 60
-        self.start_button.config(text="Start Work")
-        self.status_label.config(text="Break skipped - Ready to work")
         self.update_display()
+        self.start_timer()  # Auto-start the work timer after skipping break
     
     def show_notification(self, title, message):
         """Show a system notification"""
@@ -475,17 +551,23 @@ class BreakReminderApp:
             except:
                 pass
         
-        # Also play sound if enabled
+        # Play sound if enabled
         if self.sound_var.get():
             self.play_sound()
     
     def play_sound(self):
         """Play a notification sound"""
-        try:
-            # Use system bell
-            self.root.bell()
-        except:
-            pass
+        if PLAYSOUND_AVAILABLE and self.custom_sound_path and os.path.exists(self.custom_sound_path):
+            try:
+                playsound(self.custom_sound_path, block=False)  # Non-blocking playback
+            except Exception as e:
+                print(f"Error playing sound: {e}")
+                self.root.bell()  # Fallback to system bell
+        else:
+            try:
+                self.root.bell()  # Default system bell
+            except:
+                pass
     
     def save_settings(self):
         """Save current settings"""
@@ -494,10 +576,12 @@ class BreakReminderApp:
             self.break_minutes = int(self.break_var.get()) if self.break_var.get() else 5
             self.long_break_minutes = int(self.long_break_var.get()) if self.long_break_var.get() else 15
             self.sessions_until_long_break = int(self.sessions_var.get()) if self.sessions_var.get() else 4
+            self.idle_threshold = int(self.idle_var.get()) if self.idle_var.get() else 300
             self.sound_enabled = self.sound_var.get()
             self.auto_start_break = self.auto_break_var.get()
             self.auto_start_work = self.auto_work_var.get()
-            self.auto_start_on_launch = self.auto_launch_var.get()  # New option
+            self.auto_start_on_launch = self.auto_launch_var.get()
+            self.pause_on_idle = self.pause_idle_var.get()
             
             if TRAY_AVAILABLE:
                 self.minimize_to_tray = self.tray_var.get()
